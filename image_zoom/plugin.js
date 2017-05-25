@@ -1,15 +1,12 @@
 /**
- * ADD Imaze Zoom : TinyMCE Ver4.1.3
- * plugin.js ADD
+ * Source code of image plugin has been customized for zooming.
+ * All of defined variables and functions are used in general code of image plugin and they're marked by double stars (**).
  *
- * Copyright, Moxiecode Systems AB
- * Released under LGPL License.
- *
- * License: http://www.tinymce.com/license
- * Contributing: http://www.tinymce.com/contributing
+ * @author Konstantin Baranov
+ * @since 28 Aug 2015
  */
 
-/*global tinymce:true */
+var pluginName = 'image_zoom';
 
 var zoomControlSettings = {
     type: 'container',
@@ -23,208 +20,265 @@ var zoomControlSettings = {
     ]
 };
 
-var getOriginSrc = function(src){
-//    var resizePattern = /\/resize_(\d+)_(\d+)/;
-//    if (resizePattern.test(src)) {
-//        return src.replace(resizePattern, '');
-//    } else {
+var getSrc = function(src, width, height){
+    if (!parseInt(width) || !parseInt(height)) {
         return src;
-//    }
+    }
+    var srcPrefix = '/catalog/images/company';
+    var resizePattern = /\/resize_(\d+)_(\d+)/;
+    var resizeReplace = '/resize_' + width + '_' + height;
+    if (resizePattern.test(src)) {
+        return src.replace(resizePattern, resizeReplace);
+    } else {
+        return src.replace(srcPrefix, srcPrefix + resizeReplace);
+    }
+}
+var getOriginSrc = function(src){
+    var resizePattern = /\/resize_(\d+)_(\d+)/;
+    if (resizePattern.test(src)) {
+        return src.replace(resizePattern, '');
+    } else {
+        return src;
+    }
 }
 
+var setObjectResizedAction = function(editor){
+    editor.on('ObjectResized', function(e) {
+        editor.dom.setAttribs(editor.selection.getNode(), {
+            src: getSrc(e.target.attributes.src.nodeValue, e.width, e.height)
+        });
+    });
+}
 
-tinymce.PluginManager.add('image', function(editor) {
-	function getImageSize(url, callback) {
-		var img = document.createElement('img');
+var flagZooming = false;
 
-		function done(width, height) {
-			if (img.parentNode) {
-				img.parentNode.removeChild(img);
-			}
+tinymce.PluginManager.requireLangPack(pluginName, 'ru');
 
-			callback({width: width, height: height});
-		}
+/**
+ * plugin.js
+ *
+ * Released under LGPL License.
+ * Copyright (c) 1999-2015 Ephox Corp. All rights reserved
+ *
+ * License: http://www.tinymce.com/license
+ * Contributing: http://www.tinymce.com/contributing
+ */
 
-		img.onload = function() {
-			done(img.clientWidth, img.clientHeight);
-		};
+/*global tinymce:true */
 
-		img.onerror = function() {
-			done();
-		};
+tinymce.PluginManager.add(pluginName, function(editor) {
 
-		var style = img.style;
-		style.visibility = 'hidden';
-		style.position = 'fixed';
-		style.bottom = style.left = 0;
-		style.width = style.height = 'auto';
+    // ** Set actions for resize of object
+    setObjectResizedAction(editor);
 
-		document.body.appendChild(img);
-		img.src = url;
-	}
+    function getImageSize(url, callback) {
+        var img = document.createElement('img');
 
-	function buildListItems(inputList, itemCallback, startItems) {
-		function appendItems(values, output) {
-			output = output || [];
+        function done(width, height) {
+            if (img.parentNode) {
+                img.parentNode.removeChild(img);
+            }
+            callback({width: width, height: height});
+        }
 
-			tinymce.each(values, function(item) {
-				var menuItem = {text: item.text || item.title};
+        img.onload = function() {
+            done(Math.max(img.width, img.clientWidth), Math.max(img.height, img.clientHeight));
+        };
 
-				if (item.menu) {
-					menuItem.menu = appendItems(item.menu);
-				} else {
-					menuItem.value = item.value;
-					itemCallback(menuItem);
-				}
+        img.onerror = function() {
+            done();
+        };
 
-				output.push(menuItem);
-			});
+        var style = img.style;
+        style.visibility = 'hidden';
+        style.position = 'fixed';
+        style.bottom = style.left = 0;
+        style.width = style.height = 'auto';
 
-			return output;
-		}
+        document.body.appendChild(img);
+        img.src = url;
+    }
 
-		return appendItems(inputList, startItems || []);
-	}
+    function buildListItems(inputList, itemCallback, startItems) {
+        function appendItems(values, output) {
+            output = output || [];
 
-	function createImageList(callback) {
-		return function() {
-			var imageList = editor.settings.image_list;
+            tinymce.each(values, function(item) {
+                var menuItem = {text: item.text || item.title};
 
-			if (typeof(imageList) == "string") {
-				tinymce.util.XHR.send({
-					url: imageList,
-					success: function(text) {
-						callback(tinymce.util.JSON.parse(text));
-					}
-				});
-			} else if (typeof(imageList) == "function") {
-				imageList(callback);
-			} else {
-				callback(imageList);
-			}
-		};
-	}
+                if (item.menu) {
+                    menuItem.menu = appendItems(item.menu);
+                } else {
+                    menuItem.value = item.value;
+                    itemCallback(menuItem);
+                }
 
-	function showDialog(imageList) {
-		var win, data = {}, dom = editor.dom, imgElm = editor.selection.getNode();
-		var width, height, imageListCtrl, classListCtrl, imageDimensions = editor.settings.image_dimensions !== false;
+                output.push(menuItem);
+            });
 
-		function recalcSize() {
-			var widthCtrl, heightCtrl, newWidth, newHeight;
+            return output;
+        }
 
-			widthCtrl = win.find('#width')[0];
-			heightCtrl = win.find('#height')[0];
+        return appendItems(inputList, startItems || []);
+    }
 
-			if (!widthCtrl || !heightCtrl) {
-				return;
-			}
+    function createImageList(callback) {
+        return function() {
+            var imageList = editor.settings.image_list;
 
-			newWidth = widthCtrl.value();
-			newHeight = heightCtrl.value();
+            if (typeof imageList == "string") {
+                tinymce.util.XHR.send({
+                    url: imageList,
+                    success: function(text) {
+                        callback(tinymce.util.JSON.parse(text));
+                    }
+                });
+            } else if (typeof imageList == "function") {
+                imageList(callback);
+            } else {
+                callback(imageList);
+            }
+        };
+    }
 
-			if (win.find('#constrain')[0].checked() && width && height && newWidth && newHeight) {
-				if (width != newWidth) {
-					newHeight = Math.round((newWidth / width) * newHeight);
-					heightCtrl.value(newHeight);
-				} else {
-					newWidth = Math.round((newHeight / height) * newWidth);
-					widthCtrl.value(newWidth);
-				}
-			}
+    function showDialog(imageList) {
+        var win, data = {}, dom = editor.dom, imgElm = editor.selection.getNode();
+        var width, height, imageListCtrl, classListCtrl, imageDimensions = editor.settings.image_dimensions !== false;
 
-			width = newWidth;
-			height = newHeight;
-		}
+        function recalcSize() {
+            var widthCtrl, heightCtrl, newWidth, newHeight;
 
-		function onSubmitForm() {
-			function waitLoad(imgElm) {
-				function selectImage() {
-					imgElm.onload = imgElm.onerror = null;
+            widthCtrl = win.find('#width')[0];
+            heightCtrl = win.find('#height')[0];
 
-					if (editor.selection) {
-						editor.selection.select(imgElm);
-						editor.nodeChanged();
-					}
-				}
+            if (!widthCtrl || !heightCtrl) {
+                return;
+            }
 
-				imgElm.onload = function() {
-					if (!data.width && !data.height && imageDimensions) {
-						dom.setAttribs(imgElm, {
-							width: imgElm.clientWidth,
-							height: imgElm.clientHeight
-						});
-					}
+            newWidth = widthCtrl.value();
+            newHeight = heightCtrl.value();
 
-					selectImage();
-				};
+            if (win.find('#constrain')[0].checked() && width && height && newWidth && newHeight) {
+                if (width != newWidth) {
+                    newHeight = Math.round((newWidth / width) * newHeight);
 
-				imgElm.onerror = selectImage;
-			}
+                    if (!isNaN(newHeight)) {
+                        heightCtrl.value(newHeight);
+                    }
+                } else {
+                    newWidth = Math.round((newHeight / height) * newWidth);
 
-			updateStyle();
-			recalcSize();
+                    if (!isNaN(newWidth)) {
+                        widthCtrl.value(newWidth);
+                    }
+                }
+            }
 
-			data = tinymce.extend(data, win.toJSON());
+            width = newWidth;
+            height = newHeight;
+        }
 
-			if (!data.alt) {
-				data.alt = '';
-			}
+        function onSubmitForm() {
+            function waitLoad(imgElm) {
+                function selectImage() {
+                    imgElm.onload = imgElm.onerror = null;
 
-			if (data.width === '') {
-				data.width = null;
-			}
+                    if (editor.selection) {
+                        editor.selection.select(imgElm);
+                        editor.nodeChanged();
+                    }
+                }
 
-			if (data.height === '') {
-				data.height = null;
-			}
+                imgElm.onload = function() {
+                    if (!data.width && !data.height && imageDimensions) {
+                        dom.setAttribs(imgElm, {
+                            width: imgElm.clientWidth,
+                            height: imgElm.clientHeight
+                        });
+                    }
 
-			if (!data.style) {
-				data.style = null;
-			}
+                    selectImage();
+                };
 
+                imgElm.onerror = selectImage;
+            }
+
+            updateStyle();
+            recalcSize();
+
+            data = tinymce.extend(data, win.toJSON());
+
+            if (!data.alt) {
+                data.alt = '';
+            }
+
+            if (!data.title) {
+                data.title = '';
+            }
+
+            if (data.width === '') {
+                data.width = null;
+            }
+
+            if (data.height === '') {
+                data.height = null;
+            }
+
+            if (!data.style) {
+                data.style = null;
+            }
 
             // ** Get value of zooming
             flagZooming = data.zooming;
 
-			// Setup new data excluding style properties
-			data = {
-				src: data.src,
-				alt: data.alt,
-				width: data.width,
-				height: data.height,
-				style: data.style,
-				"class": data["class"]
-			};
+            // Setup new data excluding style properties
+            /*eslint dot-notation: 0*/
+            data = {
+                src: data.src,
+                alt: data.alt,
+                title: data.title,
+                width: data.width,
+                height: data.height,
+                style: data.style,
+                "class": data["class"]
+            };
 
-			editor.undoManager.transact(function() {
-				if (!data.src) {
-					if (imgElm) {
-						dom.remove(imgElm);
-						editor.focus();
-						editor.nodeChanged();
-					}
+            // ** Generate source image with resize parameteres
+            data.src = getSrc(data.src, data.width, data.height);
 
-					return;
-				}
+            editor.undoManager.transact(function() {
+                if (!data.src) {
+                    if (imgElm) {
+                        dom.remove(imgElm);
+                        editor.focus();
+                        editor.nodeChanged();
+                    }
 
-				if (!imgElm) {
-					data.id = '__mcenew';
-					editor.focus();
-					editor.selection.setContent(dom.createHTML('img', data));
-					imgElm = dom.get('__mcenew');
-					dom.setAttrib(imgElm, 'id', null);
-				} else {
-					dom.setAttribs(imgElm, data);
-				}
+                    return;
+                }
 
-				waitLoad(imgElm);
-			});
+                if (data.title === "") {
+                    data.title = null;
+                }
 
+                if (!imgElm) {
+                    data.id = '__mcenew';
+                    editor.focus();
+                    editor.selection.setContent(dom.createHTML('img', data));
+                    imgElm = dom.get('__mcenew');
+                    dom.setAttrib(imgElm, 'id', null);
+                } else {
+                    dom.setAttribs(imgElm, data);
+                }
+
+                waitLoad(imgElm);
+            });
+
+            // ** Change image DOM
             if (flagZooming) {
                 var linkNode = document.createElement("a");
                 var linkAttrHref = document.createAttribute("href");
                 linkAttrHref.value = getOriginSrc(data.src);
-//                linkAttrHref.value = data.src;
                 var linkAttrClass = document.createAttribute("class");
                 linkAttrClass.value = 'zoom';
                 var linkAttrRel = document.createAttribute("rel");
@@ -239,34 +293,30 @@ tinymce.PluginManager.add('image', function(editor) {
                 var containerNode = linkNode.parentNode;
                 containerNode.replaceChild(imgElm, linkNode);
             }
+        }
 
+        function removePixelSuffix(value) {
+            if (value) {
+                value = value.replace(/px$/, '');
+            }
 
-		}
+            return value;
+        }
 
-		function removePixelSuffix(value) {
-			if (value) {
-				value = value.replace(/px$/, '');
-			}
+        function srcChange(e) {
+            var srcURL, prependURL, absoluteURLPattern, meta = e.meta || {};
 
-			return value;
-		}
+            if (imageListCtrl) {
+                imageListCtrl.value(editor.convertURL(this.value(), 'src'));
+            }
 
-		function srcChange(e) {
-			var meta = e.meta || {};
+            tinymce.each(meta, function(value, key) {
+                win.find('#' + key).value(value);
+            });
 
-			if (imageListCtrl) {
-				imageListCtrl.value(editor.convertURL(this.value(), 'src'));
-			}
-
-			tinymce.each(meta, function(value, key) {
-				win.find('#' + key).value(value);
-			});
-
-			if (!meta.width && !meta.height) {
-				getImageSize(this.value(), function(data) {
-
-
+            if (!meta.width && !meta.height) {
                 srcURL = editor.convertURL(this.value(), 'src');
+
                 // Pattern test the src url and make sure we haven't already prepended the url
                 prependURL = editor.settings.image_prepend_url;
                 absoluteURLPattern = new RegExp('^(?:[a-z]+:)?//', 'i');
@@ -276,225 +326,319 @@ tinymce.PluginManager.add('image', function(editor) {
 
                 this.value(srcURL);
 
+                getImageSize(editor.documentBaseURI.toAbsolute(this.value()), function(data) {
+                    if (data.width && data.height && imageDimensions) {
+                        width = data.width;
+                        height = data.height;
 
-					if (data.width && data.height && imageDimensions) {
-						width = data.width;
-						height = data.height;
+                        win.find('#width').value(width);
+                        win.find('#height').value(height);
+                    }
+                });
+            }
+        }
 
-						win.find('#width').value(width);
-						win.find('#height').value(height);
-					}
-				});
-			}
-		}
+        width = dom.getAttrib(imgElm, 'width');
+        height = dom.getAttrib(imgElm, 'height');
 
-		width = dom.getAttrib(imgElm, 'width');
-		height = dom.getAttrib(imgElm, 'height');
+        // ** Get natural sizes of image
+        if (!parseInt(width) || !parseInt(height)) {
+            width = imgElm.naturalWidth;
+            height = imgElm.naturalHeight;
+        }
 
-		if (imgElm.nodeName == 'IMG' && !imgElm.getAttribute('data-mce-object') && !imgElm.getAttribute('data-mce-placeholder')) {
-			data = {
-				src: dom.getAttrib(imgElm, 'src'),
-				alt: dom.getAttrib(imgElm, 'alt'),
-				"class": dom.getAttrib(imgElm, 'class'),
-				width: width,
-				height: height
-			};
-
+        if (imgElm.nodeName == 'IMG' && !imgElm.getAttribute('data-mce-object') && !imgElm.getAttribute('data-mce-placeholder')) {
+            data = {
+                src: dom.getAttrib(imgElm, 'src'),
+                alt: dom.getAttrib(imgElm, 'alt'),
+                title: dom.getAttrib(imgElm, 'title'),
+                "class": dom.getAttrib(imgElm, 'class'),
+                width: width,
+                height: height
+            };
             // ** Define zooming value by DOM
             data.zooming = imgElm.parentNode.nodeName == 'A' ? true : false;
+        } else {
+            imgElm = null;
+        }
 
-		} else {
-			imgElm = null;
-		}
+        if (imageList) {
+            imageListCtrl = {
+                type: 'listbox',
+                label: 'Image list',
+                values: buildListItems(
+                    imageList,
+                    function(item) {
+                        item.value = editor.convertURL(item.value || item.url, 'src');
+                    },
+                    [{text: 'None', value: ''}]
+                ),
+                value: data.src && editor.convertURL(data.src, 'src'),
+                onselect: function(e) {
+                    var altCtrl = win.find('#alt');
 
-		if (imageList) {
-			imageListCtrl = {
-				type: 'listbox',
-				label: 'Image list',
-				values: buildListItems(
-					imageList,
-					function(item) {
-						item.value = editor.convertURL(item.value || item.url, 'src');
-					},
-					[{text: 'None', value: ''}]
-				),
-				value: data.src && editor.convertURL(data.src, 'src'),
-				onselect: function(e) {
-					var altCtrl = win.find('#alt');
+                    if (!altCtrl.value() || (e.lastControl && altCtrl.value() == e.lastControl.text())) {
+                        altCtrl.value(e.control.text());
+                    }
 
-					if (!altCtrl.value() || (e.lastControl && altCtrl.value() == e.lastControl.text())) {
-						altCtrl.value(e.control.text());
-					}
+                    win.find('#src').value(e.control.value()).fire('change');
+                },
+                onPostRender: function() {
+                    /*eslint consistent-this: 0*/
+                    imageListCtrl = this;
+                }
+            };
+        }
 
-					win.find('#src').value(e.control.value()).fire('change');
-				},
-				onPostRender: function() {
-					imageListCtrl = this;
-				}
-			};
-		}
+        if (editor.settings.image_class_list) {
+            classListCtrl = {
+                name: 'class',
+                type: 'listbox',
+                label: 'Class',
+                values: buildListItems(
+                    editor.settings.image_class_list,
+                    function(item) {
+                        if (item.value) {
+                            item.textStyle = function() {
+                                return editor.formatter.getCssText({inline: 'img', classes: [item.value]});
+                            };
+                        }
+                    }
+                )
+            };
+        }
 
-		if (editor.settings.image_class_list) {
-			classListCtrl = {
-				name: 'class',
-				type: 'listbox',
-				label: 'Class',
-				values: buildListItems(
-					editor.settings.image_class_list,
-					function(item) {
-						if (item.value) {
-							item.textStyle = function() {
-								return editor.formatter.getCssText({inline: 'img', classes: [item.value]});
-							};
-						}
-					}
-				)
-			};
-		}
+        // General settings shared between simple and advanced dialogs
+        var generalFormItems = [
+            {
+                name: 'src',
+                type: 'filepicker',
+                filetype: 'image',
+                label: 'Source',
+                autofocus: true,
+                onchange: srcChange
+            },
+            imageListCtrl
+        ];
 
-		// General settings shared between simple and advanced dialogs
-		var generalFormItems = [
-			{
-				name: 'src',
-				type: 'filepicker',
-				filetype: 'image',
-				label: 'Source',
-				autofocus: true,
-				onchange: srcChange
-			},
-			imageListCtrl
-		];
+        if (editor.settings.image_description !== false) {
+            generalFormItems.push({name: 'alt', type: 'textbox', label: 'Image description'});
+        }
 
-		if (editor.settings.image_description !== false) {
-			generalFormItems.push({name: 'alt', type: 'textbox', label: 'Image description'});
-		}
+        if (editor.settings.image_title) {
+            generalFormItems.push({name: 'title', type: 'textbox', label: 'Image Title'});
+        }
 
-		if (imageDimensions) {
-			generalFormItems.push({
-				type: 'container',
-				label: 'Dimensions',
-				layout: 'flex',
-				direction: 'row',
-				align: 'center',
-				spacing: 5,
-				items: [
-					{name: 'width', type: 'textbox', maxLength: 5, size: 3, onchange: recalcSize, ariaLabel: 'Width'},
-					{type: 'label', text: 'x'},
-					{name: 'height', type: 'textbox', maxLength: 5, size: 3, onchange: recalcSize, ariaLabel: 'Height'},
-					{name: 'constrain', type: 'checkbox', checked: true, text: 'Constrain proportions'}
-				]
-			});
-		}
-
+        if (imageDimensions) {
+            generalFormItems.push({
+                type: 'container',
+                label: 'Dimensions',
+                layout: 'flex',
+                direction: 'row',
+                align: 'center',
+                spacing: 5,
+                items: [
+                    {name: 'width', type: 'textbox', maxLength: 5, size: 3, onchange: recalcSize, ariaLabel: 'Width'},
+                    {type: 'label', text: 'x'},
+                    {name: 'height', type: 'textbox', maxLength: 5, size: 3, onchange: recalcSize, ariaLabel: 'Height'},
+                    {name: 'constrain', type: 'checkbox', checked: true, text: 'Constrain proportions'}
+                ]
+            });
             // ** Add zoom control settings into dialog
-        generalFormItems.push(zoomControlSettings);
+            generalFormItems.push(zoomControlSettings);
+        }
 
+        generalFormItems.push(classListCtrl);
 
-		generalFormItems.push(classListCtrl);
+        function mergeMargins(css) {
+            if (css.margin) {
 
-		function updateStyle() {
-			function addPixelSuffix(value) {
-				if (value.length > 0 && /^[0-9]+$/.test(value)) {
-					value += 'px';
-				}
+                var splitMargin = css.margin.split(" ");
 
-				return value;
-			}
+                switch (splitMargin.length) {
+                    case 1: //margin: toprightbottomleft;
+                        css['margin-top'] = css['margin-top'] || splitMargin[0];
+                        css['margin-right'] = css['margin-right'] || splitMargin[0];
+                        css['margin-bottom'] = css['margin-bottom'] || splitMargin[0];
+                        css['margin-left'] = css['margin-left'] || splitMargin[0];
+                        break;
+                    case 2: //margin: topbottom rightleft;
+                        css['margin-top'] = css['margin-top'] || splitMargin[0];
+                        css['margin-right'] = css['margin-right'] || splitMargin[1];
+                        css['margin-bottom'] = css['margin-bottom'] || splitMargin[0];
+                        css['margin-left'] = css['margin-left'] || splitMargin[1];
+                        break;
+                    case 3: //margin: top rightleft bottom;
+                        css['margin-top'] = css['margin-top'] || splitMargin[0];
+                        css['margin-right'] = css['margin-right'] || splitMargin[1];
+                        css['margin-bottom'] = css['margin-bottom'] || splitMargin[2];
+                        css['margin-left'] = css['margin-left'] || splitMargin[1];
+                        break;
+                    case 4: //margin: top right bottom left;
+                        css['margin-top'] = css['margin-top'] || splitMargin[0];
+                        css['margin-right'] = css['margin-right'] || splitMargin[1];
+                        css['margin-bottom'] = css['margin-bottom'] || splitMargin[2];
+                        css['margin-left'] = css['margin-left'] || splitMargin[3];
+                }
+                delete css.margin;
+            }
+            return css;
+        }
 
-			if (!editor.settings.image_advtab) {
-				return;
-			}
+        function updateStyle() {
+            function addPixelSuffix(value) {
+                if (value.length > 0 && /^[0-9]+$/.test(value)) {
+                    value += 'px';
+                }
 
-			var data = win.toJSON();
-			var css = dom.parseStyle(data.style);
+                return value;
+            }
 
-			delete css.margin;
-			css['margin-top'] = css['margin-bottom'] = addPixelSuffix(data.vspace);
-			css['margin-left'] = css['margin-right'] = addPixelSuffix(data.hspace);
-			css['border-width'] = addPixelSuffix(data.border);
+            if (!editor.settings.image_advtab) {
+                return;
+            }
 
-			win.find('#style').value(dom.serializeStyle(dom.parseStyle(dom.serializeStyle(css))));
-		}
+            var data = win.toJSON(),
+                css = dom.parseStyle(data.style);
 
-		if (editor.settings.image_advtab) {
-			// Parse styles from img
-			if (imgElm) {
-				data.hspace = removePixelSuffix(imgElm.style.marginLeft || imgElm.style.marginRight);
-				data.vspace = removePixelSuffix(imgElm.style.marginTop || imgElm.style.marginBottom);
-				data.border = removePixelSuffix(imgElm.style.borderWidth);
-				data.style = editor.dom.serializeStyle(editor.dom.parseStyle(editor.dom.getAttrib(imgElm, 'style')));
-			}
+            css = mergeMargins(css);
 
-			// Advanced dialog shows general+advanced tabs
-			win = editor.windowManager.open({
-				title: 'Insert/edit image',
-				data: data,
-				bodyType: 'tabpanel',
-				body: [
-					{
-						title: 'General',
-						type: 'form',
-						items: generalFormItems
-					},
+            if (data.vspace) {
+                css['margin-top'] = css['margin-bottom'] = addPixelSuffix(data.vspace);
+            }
+            if (data.hspace) {
+                css['margin-left'] = css['margin-right'] = addPixelSuffix(data.hspace);
+            }
+            if (data.border) {
+                css['border-width'] = addPixelSuffix(data.border);
+            }
 
-					{
-						title: 'Advanced',
-						type: 'form',
-						pack: 'start',
-						items: [
-							{
-								label: 'Style',
-								name: 'style',
-								type: 'textbox'
-							},
-							{
-								type: 'form',
-								layout: 'grid',
-								packV: 'start',
-								columns: 2,
-								padding: 0,
-								alignH: ['left', 'right'],
-								defaults: {
-									type: 'textbox',
-									maxWidth: 50,
-									onchange: updateStyle
-								},
-								items: [
-									{label: 'Vertical space', name: 'vspace'},
-									{label: 'Horizontal space', name: 'hspace'},
-									{label: 'Border', name: 'border'}
-								]
-							}
-						]
-					}
-				],
-				onSubmit: onSubmitForm
-			});
-		} else {
-			// Simple default dialog
-			win = editor.windowManager.open({
-				title: 'Insert/edit image',
-				data: data,
-				body: generalFormItems,
-				onSubmit: onSubmitForm
-			});
-		}
-	}
+            win.find('#style').value(dom.serializeStyle(dom.parseStyle(dom.serializeStyle(css))));
+        }
 
-	editor.addButton('image', {
-		icon: 'image',
-		tooltip: 'Insert/edit image',
-		onclick: createImageList(showDialog),
-		stateSelector: 'img:not([data-mce-object],[data-mce-placeholder])'
-	});
+        function updateVSpaceHSpaceBorder() {
+            if (!editor.settings.image_advtab) {
+                return;
+            }
 
-	editor.addMenuItem('image', {
-		icon: 'image',
-		text: 'Insert image',
-		onclick: createImageList(showDialog),
-		context: 'insert',
-		prependToContext: true
-	});
+            var data = win.toJSON(),
+                css = dom.parseStyle(data.style);
 
-	editor.addCommand('mceImage', createImageList(showDialog));
+            win.find('#vspace').value("");
+            win.find('#hspace').value("");
+
+            css = mergeMargins(css);
+
+            //Move opposite equal margins to vspace/hspace field
+            if ((css['margin-top'] && css['margin-bottom']) || (css['margin-right'] && css['margin-left'])) {
+                if (css['margin-top'] === css['margin-bottom']) {
+                    win.find('#vspace').value(removePixelSuffix(css['margin-top']));
+                } else {
+                    win.find('#vspace').value('');
+                }
+                if (css['margin-right'] === css['margin-left']) {
+                    win.find('#hspace').value(removePixelSuffix(css['margin-right']));
+                } else {
+                    win.find('#hspace').value('');
+                }
+            }
+
+            //Move border-width
+            if (css['border-width']) {
+                win.find('#border').value(removePixelSuffix(css['border-width']));
+            }
+
+            win.find('#style').value(dom.serializeStyle(dom.parseStyle(dom.serializeStyle(css))));
+
+        }
+
+        if (editor.settings.image_advtab) {
+            // Parse styles from img
+            if (imgElm) {
+                if (imgElm.style.marginLeft && imgElm.style.marginRight && imgElm.style.marginLeft === imgElm.style.marginRight) {
+                    data.hspace = removePixelSuffix(imgElm.style.marginLeft);
+                }
+                if (imgElm.style.marginTop && imgElm.style.marginBottom && imgElm.style.marginTop === imgElm.style.marginBottom) {
+                    data.vspace = removePixelSuffix(imgElm.style.marginTop);
+                }
+                if (imgElm.style.borderWidth) {
+                    data.border = removePixelSuffix(imgElm.style.borderWidth);
+                }
+
+                data.style = editor.dom.serializeStyle(editor.dom.parseStyle(editor.dom.getAttrib(imgElm, 'style')));
+            }
+
+            // Advanced dialog shows general+advanced tabs
+            win = editor.windowManager.open({
+                title: 'Insert/edit image',
+                data: data,
+                bodyType: 'tabpanel',
+                body: [
+                    {
+                        title: 'General',
+                        type: 'form',
+                        items: generalFormItems
+                    },
+
+                    {
+                        title: 'Advanced',
+                        type: 'form',
+                        pack: 'start',
+                        items: [
+                            {
+                                label: 'Style',
+                                name: 'style',
+                                type: 'textbox',
+                                onchange: updateVSpaceHSpaceBorder
+                            },
+                            {
+                                type: 'form',
+                                layout: 'grid',
+                                packV: 'start',
+                                columns: 2,
+                                padding: 0,
+                                alignH: ['left', 'right'],
+                                defaults: {
+                                    type: 'textbox',
+                                    maxWidth: 50,
+                                    onchange: updateStyle
+                                },
+                                items: [
+                                    {label: 'Vertical space', name: 'vspace'},
+                                    {label: 'Horizontal space', name: 'hspace'},
+                                    {label: 'Border', name: 'border'}
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                onSubmit: onSubmitForm
+            });
+        } else {
+            // Simple default dialog
+            win = editor.windowManager.open({
+                title: 'Insert/edit image',
+                data: data,
+                body: generalFormItems,
+                onSubmit: onSubmitForm
+            });
+        }
+    }
+
+    editor.addButton(pluginName, {
+        icon: 'image',
+        tooltip: 'Insert/edit image',
+        onclick: createImageList(showDialog),
+        stateSelector: 'img:not([data-mce-object],[data-mce-placeholder])'
+    });
+
+    editor.addMenuItem(pluginName, {
+        icon: 'image',
+        text: 'Insert/edit image',
+        onclick: createImageList(showDialog),
+        context: 'insert',
+        prependToContext: true
+    });
+
+    editor.addCommand('mceImage', createImageList(showDialog));
 });

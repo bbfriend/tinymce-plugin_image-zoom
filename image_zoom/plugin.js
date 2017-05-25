@@ -1,5 +1,6 @@
 /**
- * plugin.js
+ * ADD Imaze Zoom : TinyMCE Ver4.1.3
+ * plugin.js ADD
  *
  * Copyright, Moxiecode Systems AB
  * Released under LGPL License.
@@ -9,6 +10,28 @@
  */
 
 /*global tinymce:true */
+
+var zoomControlSettings = {
+    type: 'container',
+    label: ' ',
+    layout: 'flex',
+    direction: 'row',
+    align: 'center',
+    spacing: 5,
+    items: [
+        {name: 'zooming', type: 'checkbox', checked: false, text: 'Zooming'}
+    ]
+};
+
+var getOriginSrc = function(src){
+//    var resizePattern = /\/resize_(\d+)_(\d+)/;
+//    if (resizePattern.test(src)) {
+//        return src.replace(resizePattern, '');
+//    } else {
+        return src;
+//    }
+}
+
 
 tinymce.PluginManager.add('image', function(editor) {
 	function getImageSize(url, callback) {
@@ -159,6 +182,10 @@ tinymce.PluginManager.add('image', function(editor) {
 				data.style = null;
 			}
 
+
+            // ** Get value of zooming
+            flagZooming = data.zooming;
+
 			// Setup new data excluding style properties
 			data = {
 				src: data.src,
@@ -192,6 +219,28 @@ tinymce.PluginManager.add('image', function(editor) {
 
 				waitLoad(imgElm);
 			});
+
+            if (flagZooming) {
+                var linkNode = document.createElement("a");
+                var linkAttrHref = document.createAttribute("href");
+                linkAttrHref.value = getOriginSrc(data.src);
+//                linkAttrHref.value = data.src;
+                var linkAttrClass = document.createAttribute("class");
+                linkAttrClass.value = 'zoom';
+                var linkAttrRel = document.createAttribute("rel");
+                linkAttrRel.value = 'zoom-image';
+                linkNode.setAttributeNode(linkAttrHref);
+                linkNode.setAttributeNode(linkAttrClass);
+                linkNode.setAttributeNode(linkAttrRel);
+                linkNode.appendChild(imgElm);
+                editor.selection.setNode(linkNode);
+            } else {
+                var linkNode = imgElm.parentNode;
+                var containerNode = linkNode.parentNode;
+                containerNode.replaceChild(imgElm, linkNode);
+            }
+
+
 		}
 
 		function removePixelSuffix(value) {
@@ -215,6 +264,19 @@ tinymce.PluginManager.add('image', function(editor) {
 
 			if (!meta.width && !meta.height) {
 				getImageSize(this.value(), function(data) {
+
+
+                srcURL = editor.convertURL(this.value(), 'src');
+                // Pattern test the src url and make sure we haven't already prepended the url
+                prependURL = editor.settings.image_prepend_url;
+                absoluteURLPattern = new RegExp('^(?:[a-z]+:)?//', 'i');
+                if (prependURL && !absoluteURLPattern.test(srcURL) && srcURL.substring(0, prependURL.length) !== prependURL) {
+                    srcURL = prependURL + srcURL;
+                }
+
+                this.value(srcURL);
+
+
 					if (data.width && data.height && imageDimensions) {
 						width = data.width;
 						height = data.height;
@@ -237,6 +299,10 @@ tinymce.PluginManager.add('image', function(editor) {
 				width: width,
 				height: height
 			};
+
+            // ** Define zooming value by DOM
+            data.zooming = imgElm.parentNode.nodeName == 'A' ? true : false;
+
 		} else {
 			imgElm = null;
 		}
@@ -319,6 +385,10 @@ tinymce.PluginManager.add('image', function(editor) {
 				]
 			});
 		}
+
+            // ** Add zoom control settings into dialog
+        generalFormItems.push(zoomControlSettings);
+
 
 		generalFormItems.push(classListCtrl);
 

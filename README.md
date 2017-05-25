@@ -1,4 +1,4 @@
-# tinymce-plugin_image-zoom
+# tinymce-plugin_image + zoom
 
 add Zooming check BOX  
  Addition of **Zooming check box**   
